@@ -1,6 +1,6 @@
-# *OptiLearn⚡ - Interactive Learning Assistant*
+# *LearnBuddy⚡ - Interactive Learning Assistant*
 
-OptiLearn⚡ is an interactive AI-powered learning assistant designed to enhance the educational experience through conversational AI, real-time video interactions, voice input, and a drawable canvas for interactive learning. It leverages cutting-edge AI models for responsive chat, voice feedback, and image recognition.
+LearnBuddy⚡ is an interactive AI-powered learning assistant designed to enhance the educational experience through conversational AI, real-time video interactions, voice input, and a drawable canvas for interactive learning. It leverages cutting-edge AI models for responsive chat, voice feedback, and image recognition.
 
 > 🚧 *This project is currently under development.* Some features may change or be enhanced in future updates.
 
@@ -28,8 +28,8 @@ OptiLearn⚡ is an interactive AI-powered learning assistant designed to enhance
 
 1. *Clone the repository:*
    bash
-   git clone https://github.com/Harshit-K-Singh/optilearn.git
-   cd optilearn
+   git clone https://github.com/Harshit-K-Singh/LearnBuddy.git
+   cd LearnBuddy
 
 2. **Install required dependencies:**
    bash
@@ -61,7 +61,7 @@ OptiLearn⚡ is an interactive AI-powered learning assistant designed to enhance
 ## *Project Structure*
 
    bash
-   OptiLearn/
+   LearnBuddy/
    │
    ├── app.py               # Main entry point for the Streamlit app
    ├── requirements.txt     # Dependencies
