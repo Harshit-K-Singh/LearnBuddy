@@ -1,0 +1,10 @@
+streamlit
+Pillow
+gTTS
+pyttsx3
+opencv-python
+SpeechRecognition
+PyPDF2
+python-dotenv
+streamlit-drawable-canvas
+groq
