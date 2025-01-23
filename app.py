@@ -20,7 +20,7 @@ from io import StringIO
 load_dotenv()
 
 client = Groq(
-    api_key="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")
+    api_key="Enter Your Key")
 
 # Your provided Particle.js HTML
 particles_js = """<!DOCTYPE html>
