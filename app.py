@@ -14,11 +14,13 @@ from dotenv import load_dotenv
 from streamlit_drawable_canvas import st_canvas
 import ollama
 import base64
+import PyPDF2
+from io import StringIO
 
 load_dotenv()
 
 client = Groq(
-    api_key="Enter Your Key Here")
+    api_key="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")
 
 # Your provided Particle.js HTML
 particles_js = """<!DOCTYPE html>
@@ -172,8 +174,11 @@ class ChatApp:
         self.audio_lock = threading.Lock()
         if 'chat_history' not in st.session_state:
             st.session_state.chat_history = []
+        if 'pdf_content' not in st.session_state:
+            st.session_state.pdf_content = None
         self.voice_feedback = None
-        self.particles_visible = True
+        if 'particles_visible' not in st.session_state:
+            st.session_state.particles_visible = True
         self.setup_chat_interface()
 
     def setup_chat_interface(self):
@@ -182,7 +187,8 @@ class ChatApp:
 
         self.add_custom_css()
 
-        self.particles_container = st.empty()
+        if st.session_state.particles_visible:
+            components.html(particles_js, height=350)
         
         # Create a container for chat history
         chat_container = st.container()
@@ -202,11 +208,16 @@ class ChatApp:
                         self.voice_input()
                     st.button("🎥 Live Class", on_click=self.start_live_class)
                     st.button("🖍️ Canvas", on_click=self.toggle_canvas)
+                    st.button("📄 PDF Extractor", on_click=self.toggle_pdf_sidebar)
 
         if st.session_state.get('canvas_open', False):
             self.setup_drawing_canvas()
 
+        if st.session_state.get('pdf_sidebar_open', False):
+            self.setup_pdf_sidebar()
+
         self.update_chat_display(chat_container)
+
 
     def add_custom_css(self):
         st.markdown("""
@@ -266,12 +277,6 @@ class ChatApp:
         self.particles_visible = False
 
     def update_chat_display(self, container):
-        if self.particles_visible:
-            with self.particles_container:
-                components.html(particles_js, height=350)
-        else:
-            self.particles_container.empty()
-        
         with container:
             # st.markdown('<div class="chat-container">', unsafe_allow_html=True)
             for chat in st.session_state.chat_history:
@@ -280,12 +285,28 @@ class ChatApp:
 
     def send_message(self, text):
         if text:
-            self.particles_visible = False
+            st.session_state.particles_visible = False
+            
             st.session_state.chat_history.append({'sender': 'You', 'message': text})
+            
+            # Modify the message to include PDF context if available
+            if st.session_state.pdf_content:
+                context_message = {
+                    'role': 'system', 
+                    'content': f"Use the following PDF content as context for answering the question: {st.session_state.pdf_content[:2000]}"
+                }
+                self.messages.append(context_message)
+            
             self.messages.append({'role': 'user', 'content': text})
             response = self.get_response(text)
             st.session_state.chat_history.append({'sender': 'OptiLearn', 'message': response})
-            st.experimental_rerun()
+            
+            # Remove the PDF context message if it was added
+            if st.session_state.pdf_content:
+                self.messages.pop(-2)
+            
+            st.rerun()
+
 
     def voice_input(self):
         r = sr.Recognizer()
@@ -394,6 +415,31 @@ class ChatApp:
                     st.success("Drawing saved as drawing.png!")
                 else:
                     st.warning("No drawing to save!")
+
+    def toggle_pdf_sidebar(self):
+        st.session_state['pdf_sidebar_open'] = not st.session_state.get('pdf_sidebar_open', False)
+        st.rerun()
+
+    def setup_pdf_sidebar(self):
+        with st.sidebar:
+            st.header("PDF Extractor")
+            uploaded_file = st.file_uploader("Upload your PDF", type=['pdf'])
+            
+            if uploaded_file is not None:
+                try:
+                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
+                    text = ""
+                    for page in pdf_reader.pages:
+                        text += page.extract_text()
+                    
+                    st.session_state.pdf_content = text
+                    st.success("PDF uploaded successfully! You can now ask questions about its content.")
+                    
+                    with st.expander("View PDF Content"):
+                        st.text(text[:1000] + "..." if len(text) > 1000 else text)
+                
+                except Exception as e:
+                    st.error(f"Error processing PDF: {str(e)}")
 
 if __name__ == "__main__":
     persona = SOFIA_TUTOR_PERSONA  # Define your persona
