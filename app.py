@@ -14,9 +14,13 @@ from streamlit_drawable_canvas import st_canvas
 from groq import Groq
 import pdfkit
 import os
+import dotenv
 
-# Initialize Groq client
-client = Groq(api_key="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")
+# Load environment variables
+dotenv.load_dotenv()
+
+# Initialize Groq client with API key from environment variable
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Setup page configuration
 st.set_page_config(
@@ -827,8 +831,12 @@ def setup_learning_path():
                     with open("temp_learning_path.html", "w", encoding="utf-8") as f:
                         f.write(html_content)
                     
-                    # Convert HTML to PDF using pdfkit
-                    config = pdfkit.configuration(wkhtmltopdf='C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe' if os.name == 'nt' else '/usr/local/bin/wkhtmltopdf')
+                    # Get wkhtmltopdf path from environment variable or use default based on OS
+                    wkhtmltopdf_path = os.getenv('PDF_WKHTMLTOPDF_PATH', 
+                                                '/usr/local/bin/wkhtmltopdf' if os.name != 'nt' else 
+                                                'C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe')
+                    
+                    config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
                     pdf = pdfkit.from_file("temp_learning_path.html", False, configuration=config)
                     
                     # Clean up temporary file
