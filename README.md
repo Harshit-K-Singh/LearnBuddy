@@ -1,6 +1,9 @@
 # *LearnBuddy⚡ - Interactive Learning Assistant*
 
 LearnBuddy⚡ is an interactive AI-powered learning assistant designed to enhance the educational experience through conversational AI, real-time video interactions, voice input, and a drawable canvas for interactive learning. It leverages cutting-edge AI models for responsive chat, voice feedback, and image recognition.
+---
+ https://learnbuddy-interactive-learning-assistant.streamlit.app/
+---
 
 > 🚧 *This project is currently under development.* Some features may change or be enhanced in future updates.
 
