@@ -37,11 +37,10 @@ LearnBuddy⚡ is an interactive AI-powered learning assistant designed to enhanc
 
 3. *Set up environment variables:*
    
-   Create a .env file in the project directory with your API keys:
+  LearnBuddy requires the following environment variables:
 
-   plaintext
-   GROQ_API_KEY=your_groq_api_key
-   OLLAMA_API_KEY=your_ollama_api_key
+1. `GROQ_API_KEY`: Your Groq API key for AI completions
+2. `PDF_WKHTMLTOPDF_PATH`: (Optional) Path to wkhtmltopdf executable for PDF generation
 
 4. **Run the application:**
 
