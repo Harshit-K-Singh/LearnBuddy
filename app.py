@@ -1,28 +1,31 @@
-import threading
-import os
-import io
 import streamlit as st
 import streamlit.components.v1 as components
+from datetime import datetime
+import random
+import time
+import json
+import numpy as np
 from PIL import Image
-from gtts import gTTS
-import pyttsx3
-import cv2
-import speech_recognition as sr
-from utils.constants import DARK_GRAY_COLOR, PRIMARY_APP_COLOR, APP_CHAT_FONT, PERSONA_NAME_FONT, SOFIA_TUTOR_PERSONA
-from groq import Groq
-from dotenv import load_dotenv
-from streamlit_drawable_canvas import st_canvas
-import ollama
+import io
 import base64
 import PyPDF2
-from io import StringIO
+from utils.constants import DARK_GRAY_COLOR, PRIMARY_APP_COLOR, APP_CHAT_FONT, PERSONA_NAME_FONT, SOFIA_TUTOR_PERSONA
+from streamlit_drawable_canvas import st_canvas
+from groq import Groq
+import pdfkit
+import os
 
-load_dotenv()
+# Initialize Groq client
+client = Groq(api_key="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")
 
-client = Groq(
-    api_key="Enter Your Key")
+# Setup page configuration
+st.set_page_config(
+    page_title="LearnBuddy",
+    page_icon="⚡",
+    layout="wide",
+)
 
-# Your provided Particle.js HTML
+# Particles.js animation HTML
 particles_js = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -36,7 +39,7 @@ particles_js = """<!DOCTYPE html>
     height: 100vh;
     top: 0;
     left: 0;
-    z-index: 1;
+    z-index: -1;
   }
   .content {
     position: relative;
@@ -160,224 +163,707 @@ particles_js = """<!DOCTYPE html>
 </html>
 """
 
-# Update the page config
-st.set_page_config(
-    page_title="OptiLearn",
-    page_icon="⚡",
-    layout="wide",
-)
+# Icons for the chat messages
+icons = {
+    "assistant": "⚡",
+    "user": "👤"
+}
 
-class ChatApp:
-    def __init__(self, persona):
-        self.persona = persona
-        self.messages = [{'role': 'system', 'content': self.persona.system_prompts}]
-        self.audio_lock = threading.Lock()
-        if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = []
-        if 'pdf_content' not in st.session_state:
-            st.session_state.pdf_content = None
-        self.voice_feedback = None
-        if 'particles_visible' not in st.session_state:
-            st.session_state.particles_visible = True
-        self.setup_chat_interface()
+# Initialize session state
+if "messages" not in st.session_state:
+    st.session_state.messages = [{
+        "role": "assistant", 
+        "content": f"Hello! I'm {SOFIA_TUTOR_PERSONA['name']}, an AI tutor. How can I help you with your learning journey today?",
+        "timestamp": datetime.now().strftime("%H:%M")
+    }]
 
-    def setup_chat_interface(self):
-        st.title("OptiLearn⚡")
-        st.markdown("### Your AI Tutor")
+if "show_animation" not in st.session_state:
+    st.session_state.show_animation = True
 
-        self.add_custom_css()
+if "task_planner_open" not in st.session_state:
+    st.session_state.task_planner_open = False
 
-        if st.session_state.particles_visible:
-            components.html(particles_js, height=350)
+if "learning_tasks" not in st.session_state:
+    st.session_state.learning_tasks = []
+
+if "pdf_sidebar_open" not in st.session_state:
+    st.session_state.pdf_sidebar_open = False
+
+if "learning_path_open" not in st.session_state:
+    st.session_state.learning_path_open = False
+
+if "canvas_open" not in st.session_state:
+    st.session_state.canvas_open = False
+
+if "learning_context" not in st.session_state:
+    st.session_state.learning_context = {
+        "skill_level": "Beginner",
+        "subject_focus": [],
+        "learning_goals": ""
+    }
+
+if "generated_path" not in st.session_state:
+    st.session_state.generated_path = ""
+
+if "pdf_content" not in st.session_state:
+    st.session_state.pdf_content = None
+
+# Mock LLM response
+def get_mock_response(prompt):
+    """Simulate an AI response to demonstrate the UI"""
+    # Using a simple template system for demo purposes
+    responses = [
+        f"I understand you're asking about '{prompt}'. As your AI tutor, I'd suggest breaking this down step by step.",
+        f"That's a great question about '{prompt}'! Let me explain this concept in a way that's easy to understand.",
+        f"When it comes to '{prompt}', there are a few key principles to keep in mind. First, let's clarify the fundamentals.",
+        f"I'd be happy to help you learn about '{prompt}'. This is actually a fascinating topic that connects to many other areas."
+    ]
+    return random.choice(responses) + "\n\nIs there a specific aspect of this topic you'd like to explore further?"
+
+# Function to add custom CSS
+def add_custom_css():
+    st.markdown("""
+        <style>
+        /* Main App Styling */
+        .stApp {
+            background: linear-gradient(135deg, #1a1a1a, #0a0a0a);
+            color: white;
+            font-family: 'Inter', sans-serif;
+        }
         
-        # Create a container for chat history
-        chat_container = st.container()
+        /* Hide default Streamlit elements */
+        div[data-testid="stHeader"],
+        div[data-testid="stToolbar"],
+        div[data-testid="stDecoration"],
+        footer {
+            display: none !important;
+        }
         
-        # Create a container for input and options at the bottom
-        input_container = st.container()
+        /* Main Title */
+        .main-title {
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            padding: 10px;
+            border-radius: 20px;
+            margin: 10px auto;
+            max-width: 800px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(76, 175, 80, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .main-title h1 {
+            margin: 0;
+            font-size: 2.2em;
+            font-weight: 700;
+            background: linear-gradient(120deg, #ffffff, #e0e0e0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .main-title h3 {
+            margin: 5px 0 0 0;
+            font-size: 1.1em;
+            opacity: 0.9;
+            font-weight: 500;
+        }
 
-        with input_container:
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                prompt = st.chat_input("Say something", key="chat_input")
-                if prompt:
-                    self.send_message(prompt)
-            with col2:
-                with st.expander("Options ⚙️", expanded=False):
-                    if st.button("🎤 Mic", key="mic_button"):
-                        self.voice_input()
-                    st.button("🎥 Live Class", on_click=self.start_live_class)
-                    st.button("🖍️ Canvas", on_click=self.toggle_canvas)
-                    st.button("📄 PDF Extractor", on_click=self.toggle_pdf_sidebar)
+        # /* Chat Container */
+        # .chat-container {
+        #     height: calc(100vh - 200px);
+        #     overflow-y: auto;
+        #     margin-bottom: 80px;
+        #     padding: 10px;
+        #     border-radius: 10px;
+        #     background: rgba(0, 0, 0, 0.2);
+        # }
+        
+        /* Streamlit Chat Message Styling */
+        [data-testid="stChatMessage"] {
+            background: transparent !important;
+            border: none !important;
+            margin-bottom: 15px !important;
+            padding: 10px !important;
+            border-radius: 15px !important;
+            backdrop-filter: blur(10px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        }
+        
+        /* User message styling */
+        [data-testid="stChatMessage"][data-testid="stChatMessageUser"] {
+            background: rgba(76, 175, 80, 0.1) !important;
+        }
+        
+        /* Assistant message styling */
+        [data-testid="stChatMessage"][data-testid="stChatMessageAssistant"] {
+            background: rgba(255, 255, 255, 0.05) !important;
+        }
 
-        if st.session_state.get('canvas_open', False):
-            self.setup_drawing_canvas()
+        .stChatMessage [data-testid="stMarkdownContainer"] p {
+            font-size: 1em;
+            line-height: 1.5;
+            margin: 0;
+        }
+        
+        /* Message timestamp */
+        .message-timestamp {
+            font-size: 0.7em;
+            color: rgba(255, 255, 255, 0.6);
+            text-align: right;
+            margin-top: 5px;
+        }
 
-        if st.session_state.get('pdf_sidebar_open', False):
-            self.setup_pdf_sidebar()
+        /* Input Container - Fixed at the bottom */
+        .chat-input-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: rgba(26, 26, 26, 0.95);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            z-index: 1000;
+        }
 
-        self.update_chat_display(chat_container)
+        /* Input Styling */
+        .stChatInputContainer {
+            background-color: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+        }
 
+        .stChatInputContainer textarea {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            border-radius: 25px !important;
+            color: white !important;
+            padding: 15px 25px !important;
+        }
+        
+        /* Sidebar styling */
+        [data-testid="stSidebar"] {
+            background: rgba(0, 0, 0, 0.3);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Options menu */
+        .stExpander {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border-radius: 10px !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            margin-bottom: 10px !important;
+        }
+        
+        /* Task styling */
+        .task-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        
+        .task-title {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .task-priority-high {
+            color: #ff5252;
+        }
+        
+        .task-priority-medium {
+            color: #ffb142;
+        }
+        
+        .task-priority-low {
+            color: #2ed573;
+        }
+        
+        .task-completed {
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+        
+        /* Learning path container */
+        .learning-path-container {
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .section-header {
+            color: #4CAF50;
+            font-size: 1.2em;
+            margin-top: 15px;
+            margin-bottom: 10px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-    def add_custom_css(self):
-        st.markdown("""
-            <style>
-            .stApp {
-                background-color: rgba(0, 0, 0, 0.8);
-                height: 100vh;
-                overflow: hidden;
-            }
-            div[data-testid="stHeader"], div[data-testid="stToolbar"] {
-                background-color: rgba(0, 0, 0, 0);
-            }
-            .stButton button {
-                background-color: #4CAF50;
-                color: white;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                transition: background-color 0.3s ease;
-            }
-            .stButton button:hover {
-                background-color: #45a049;
-            }
-            h1, h3 {
-                color: white;
-                text-align: center;
-                text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            }
-            .chat-container {
-                height: calc(100vh - 300px);
-                overflow-y: auto;
-                padding: 20px;
-                background-color: rgba(255, 255, 255, 0.1);
-                border-radius: 10px;
-                backdrop-filter: blur(10px);
-            }
-            .stExpander {
-                background-color: rgba(255, 255, 255, 0.1) !important;
-                border-radius: 10px !important;
-            }
-            .stExpander[data-expanded="true"] {
-                transform: scaleY(-1);
-            }
-            .stExpander[data-expanded="true"] > div {
-                transform: scaleY(-1);
-            }
-            </style>
-        """, unsafe_allow_html=True)
+def toggle_task_planner():
+    st.session_state.task_planner_open = not st.session_state.task_planner_open
+    st.session_state.pdf_sidebar_open = False
+    st.session_state.learning_path_open = False
+    st.session_state.canvas_open = False
+
+def toggle_pdf_sidebar():
+    st.session_state.pdf_sidebar_open = not st.session_state.pdf_sidebar_open
+    st.session_state.task_planner_open = False
+    st.session_state.learning_path_open = False
+    st.session_state.canvas_open = False
     
-    def update_particle_background(self):
-        """Displays the particle background if visible."""
-        if self.particles_visible:
-            components.html(particles_js, height=350)
-    def hide_particles(self):
-        """Hides the particle background."""
-        self.particles_visible = False
+def toggle_learning_path():
+    st.session_state.learning_path_open = not st.session_state.get('learning_path_open', False)
+    st.session_state.task_planner_open = False
+    st.session_state.pdf_sidebar_open = False
+    st.session_state.canvas_open = False
+    
+def toggle_canvas():
+    st.session_state.canvas_open = not st.session_state.get('canvas_open', False)
+    st.session_state.task_planner_open = False
+    st.session_state.pdf_sidebar_open = False
+    st.session_state.learning_path_open = False
 
-    def update_chat_display(self, container):
-        with container:
-            # st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-            for chat in st.session_state.chat_history:
-                st.markdown(f"**{chat['sender']}:** {chat['message']}")
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    def send_message(self, text):
-        if text:
-            st.session_state.particles_visible = False
-            
-            st.session_state.chat_history.append({'sender': 'You', 'message': text})
-            
-            # Modify the message to include PDF context if available
-            if st.session_state.pdf_content:
-                context_message = {
-                    'role': 'system', 
-                    'content': f"Use the following PDF content as context for answering the question: {st.session_state.pdf_content[:2000]}"
-                }
-                self.messages.append(context_message)
-            
-            self.messages.append({'role': 'user', 'content': text})
-            response = self.get_response(text)
-            st.session_state.chat_history.append({'sender': 'OptiLearn', 'message': response})
-            
-            # Remove the PDF context message if it was added
-            if st.session_state.pdf_content:
-                self.messages.pop(-2)
-            
+def setup_task_planner():
+    st.header("Learning Path Tasks")
+    
+    # Initialize task list in session state if not exists
+    if 'learning_tasks' not in st.session_state:
+        st.session_state.learning_tasks = []
+    
+    # Add new task
+    st.subheader("Add New Task")
+    
+    # Create input widgets with empty default values
+    task_title = st.text_input("Task Title", key="new_task_title")
+    task_description = st.text_area("Task Description", key="new_task_description")
+    task_due_date = st.date_input("Due Date", key="new_task_due_date")
+    task_priority = st.select_slider(
+        "Priority",
+        ["Low", "Medium", "High"],
+        value="Medium",
+        key="new_task_priority"
+    )
+    
+    if st.button("Add Task", key="add_task"):
+        if task_title:
+            new_task = {
+                "title": task_title,
+                "description": task_description,
+                "due_date": task_due_date.strftime("%Y-%m-%d"),
+                "priority": task_priority,
+                "completed": False,
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+            }
+            st.session_state.learning_tasks.append(new_task)
+            st.success("Task added successfully!")
+            # Clear inputs by rerunning the app
             st.rerun()
-
-
-    def voice_input(self):
-        r = sr.Recognizer()
-        with sr.Microphone() as source:
-            st.write("Listening... Speak now.")
-            audio = r.listen(source)
-            try:
-                text = r.recognize_google(audio)
-                st.write(f"You said: {text}")
-                self.send_message(text)
-            except sr.UnknownValueError:
-                st.write("Sorry, I couldn't understand that.")
-            except sr.RequestError:
-                st.write("There was an error with the speech recognition service.")
-
-    def get_response(self, query):
-        chat_completion = client.chat.completions.create(
-            messages=self.messages, model="llama3-8b-8192", max_tokens=1000
-        )
-        return chat_completion.choices[0].message.content
-
-    def speak_response(self, response):
-        if self.persona.gender == 'female':
-            self.respond_online(response)
         else:
-            self.respond(response)
-
-    def respond(self, response):
-        with self.audio_lock:
-            engine = pyttsx3.init()
-            voices = engine.getProperty('voices')
-            engine.setProperty('voice', voices[0].id)
-            engine.setProperty('rate', 300)
-            engine.save_to_file(response, 'temp.wav')
-            engine.runAndWait()
-            self.auto_play_audio('temp.wav')
-
-    def respond_online(self, response):
-        tts = gTTS(text=response, lang='en')
-        filename = "temp.mp3"
-        tts.save(filename)
-        self.auto_play_audio(filename)
+            st.warning("Please enter a task title!")
     
-    def toggle_canvas(self):
-        st.session_state['canvas_open'] = not st.session_state.get('canvas_open', False)
+    # Display tasks
+    st.subheader("Your Tasks")
+    if st.session_state.learning_tasks:
+        for i, task in enumerate(st.session_state.learning_tasks):
+            with st.expander(f"{'✅' if task['completed'] else '⏳'} {task['title']}", expanded=False):
+                st.write(f"**Description:** {task['description']}")
+                st.write(f"**Due Date:** {task['due_date']}")
+                st.write(f"**Priority:** {task['priority']}")
+                st.write(f"**Created:** {task['created_at']}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Toggle Complete", key=f"toggle_{i}"):
+                        st.session_state.learning_tasks[i]['completed'] = not st.session_state.learning_tasks[i]['completed']
+                        st.rerun()
+                with col2:
+                    if st.button("Delete Task", key=f"delete_{i}"):
+                        st.session_state.learning_tasks.pop(i)
+                        st.rerun()
+        
+        # Task statistics
+        completed_tasks = sum(1 for task in st.session_state.learning_tasks if task['completed'])
+        total_tasks = len(st.session_state.learning_tasks)
+        progress = completed_tasks / total_tasks if total_tasks > 0 else 0
+        
+        st.progress(progress)
+        st.write(f"Progress: {completed_tasks}/{total_tasks} tasks completed")
+        
+        # Sort tasks by priority and due date
+        sorted_tasks = sorted(
+            st.session_state.learning_tasks,
+            key=lambda x: (not x['completed'], x['priority'] == 'High', x['due_date'])
+        )
+        
+        # Display upcoming tasks
+        st.subheader("Upcoming Tasks")
+        for task in sorted_tasks[:3]:  # Show top 3 tasks
+            if not task['completed']:
+                st.write(f"• {task['title']} (Due: {task['due_date']})")
+    else:
+        st.info("No tasks yet. Add some tasks to get started!")
+    
+    # Export/Import tasks
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Export Tasks"):
+            tasks_json = json.dumps(st.session_state.learning_tasks, indent=2)
+            st.download_button(
+                label="Download Tasks",
+                data=tasks_json,
+                file_name="learning_tasks.json",
+                mime="application/json"
+            )
+    with col2:
+        uploaded_file = st.file_uploader("Import Tasks", type=['json'])
+        if uploaded_file:
+            try:
+                imported_tasks = json.load(uploaded_file)
+                st.session_state.learning_tasks.extend(imported_tasks)
+                st.success("Tasks imported successfully!")
+                st.rerun()
+            except:
+                st.error("Error importing tasks. Please check the file format.")
 
-    def auto_play_audio(self, filename):
+def setup_pdf_sidebar():
+    st.header("📄 PDF Extractor")
+    uploaded_file = st.file_uploader("Upload your PDF", type=['pdf'])
+    
+    if uploaded_file is not None:
         try:
-            with open(filename, "rb") as audio_file:
-                audio_bytes = audio_file.read()
-            st.audio(audio_bytes, format='audio/mp3')
+            pdf_reader = PyPDF2.PdfReader(uploaded_file)
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text()
+            
+            st.session_state.pdf_content = text
+            st.success("PDF uploaded successfully! You can now ask questions about its content.")
+            
+            with st.expander("View PDF Content"):
+                st.text(text[:1000] + "..." if len(text) > 1000 else text)
+            
+            # Add PDF Question functionality
+            st.subheader("Ask about this PDF")
+            pdf_question = st.text_input("Enter your question about the PDF:", key="pdf_question_input")
+            
+            if st.button("Ask Question", key="ask_pdf_question"):
+                if pdf_question:
+                    # Create a prompt combining the question and PDF content
+                    pdf_prompt = f"""
+                    Based on the following document content, please answer this question:
+                    
+                    QUESTION: {pdf_question}
+                    
+                    DOCUMENT CONTENT:
+                    {text[:3000]}  # Limit content to avoid token limits
+                    
+                    Please provide a detailed, accurate answer based only on the information in the document.
+                    """
+                    
+                    with st.spinner("Analyzing PDF content..."):
+                        # Call Groq API for response
+                        completion = client.chat.completions.create(
+                            messages=[{"role": "user", "content": pdf_prompt}],
+                            model="llama3-8b-8192",
+                            max_tokens=1000
+                        )
+                        
+                        response = completion.choices[0].message.content
+                    
+                    # Add the question and response to chat history
+                    current_time = datetime.now().strftime("%H:%M")
+                    
+                    # Add user question to chat
+                    st.session_state.messages.append({
+                        'role': 'user',
+                        'content': f"📄 PDF Question: {pdf_question}",
+                        'timestamp': current_time
+                    })
+                    
+                    # Add AI response to chat
+                    st.session_state.messages.append({
+                        'role': 'assistant',
+                        'content': response,
+                        'timestamp': datetime.now().strftime("%H:%M")
+                    })
+                    
+                    st.success("Response added to chat!")
+                    
+                    # Force app rerun to update chat
+                    st.rerun()
+                else:
+                    st.warning("Please enter a question first!")
+        
         except Exception as e:
-            st.error(f"Error loading audio file: {e}")
+            st.error(f"Error processing PDF: {str(e)}")
 
-    def start_live_class(self):
-        cap = cv2.VideoCapture(0)
-        st_frame = st.empty()
-        st.write("Press 'Stop' to end the live class.")
-        stop_button = st.button("Stop", key="stop_live_class")
-        while cap.isOpened() and not stop_button:
-            ret, frame = cap.read()
-            if ret:
-                st_frame.image(frame, channels="BGR")
-            else:
-                break
-        cap.release()
-        st.write("Live class ended.")
+def setup_learning_path():
+    st.header("Learning Path")
+    
+    # Add custom CSS for better UI
+    st.markdown("""
+        <style>
+        .learning-path-container {
+            background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .section-header {
+            color: #4CAF50;
+            font-size: 1.2em;
+            margin-top: 15px;
+            margin-bottom: 10px;
+        }
+        .stButton>button {
+            width: 100%;
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 5px 0;
+            transition: all 0.3s ease;
+        }
+        .stButton>button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # Learning Context
+    with st.container():
+        st.markdown('<div class="learning-path-container">', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Learning Context</div>', unsafe_allow_html=True)
+        
+        st.session_state.learning_context["skill_level"] = st.select_slider(
+            "Skill Level", 
+            ["Beginner", "Intermediate", "Advanced"],
+            value=st.session_state.learning_context["skill_level"],
+            key="learning_path_skill_level"
+        )
+        st.session_state.learning_context["subject_focus"] = st.multiselect(
+            "Subject Focus", 
+            ["Art", "Science", "Math", "Language", "History", "Geography", "Music", "Design", "Technology"],
+            default=st.session_state.learning_context["subject_focus"],
+            key="learning_path_subjects"
+        )
+        st.session_state.learning_context["learning_goals"] = st.text_area(
+            "Learning Goals",
+            value=st.session_state.learning_context["learning_goals"],
+            placeholder="What do you want to learn?",
+            key="learning_path_goals"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    def setup_drawing_canvas(self):
-        with st.sidebar:
-            st.write("Draw something below:")
+    # Learning Style
+    with st.container():
+        st.markdown('<div class="learning-path-container">', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Learning Style</div>', unsafe_allow_html=True)
+        
+        learning_style = st.selectbox(
+            "Preferred Learning Style",
+            ["Visual", "Auditory", "Reading/Writing", "Kinesthetic", "Mixed"],
+            key="learning_path_style"
+        )
+        pace = st.select_slider(
+            "Learning Pace",
+            ["Slow", "Moderate", "Fast"],
+            value="Moderate",
+            key="learning_path_pace"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # Time Commitment
+    with st.container():
+        st.markdown('<div class="learning-path-container">', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Time Commitment</div>', unsafe_allow_html=True)
+        
+        weekly_hours = st.slider(
+            "Hours per week",
+            min_value=1,
+            max_value=40,
+            value=10,
+            key="learning_path_hours"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # Generate Learning Path
+    if st.button("Generate Learning Path", key="generate_path"):
+        # Create a prompt for the AI to generate a personalized learning path
+        learning_path_prompt = f"""
+        Create a personalized learning path for a {st.session_state.learning_context['skill_level']} student
+        interested in {', '.join(st.session_state.learning_context['subject_focus'])}.
+        Learning goals: {st.session_state.learning_context['learning_goals']}
+        Learning style: {learning_style}
+        Learning pace: {pace}
+        Weekly commitment: {weekly_hours} hours
+
+        Please provide a detailed learning path including:
+        1. Learning Objectives
+           - Short-term goals (1-2 weeks)
+           - Medium-term goals (1-2 months)
+           - Long-term goals (3-6 months)
+        
+        2. Learning Sequence
+           - Week-by-week breakdown
+           - Daily learning activities
+           - Practice exercises
+        
+        3. Resources
+           - Recommended books
+           - Online courses
+           - Tools and software
+           - Practice materials
+        
+        4. Assessment Points
+           - Weekly checkpoints
+           - Monthly progress reviews
+           - Skill assessments
+        
+        5. Support System
+           - Peer learning opportunities
+           - Expert guidance
+           - Community resources
+        """
+        
+        completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": learning_path_prompt}],
+            model="llama3-8b-8192",
+            max_tokens=2000
+        )
+        
+        # Store the generated path in session state
+        st.session_state.generated_path = completion.choices[0].message.content
+        
+        with st.expander("View Learning Path", expanded=True):
+            st.markdown(st.session_state.generated_path)
+            
+            # Add download button for PDF
+            if st.button("Download Learning Path as PDF", key="download_path"):
+                try:
+                    # Create a temporary HTML file
+                    html_content = """
+                    <html>
+                    <head>
+                        <meta charset="UTF-8">
+                        <style>
+                            body {{ 
+                                font-family: Arial, sans-serif; 
+                                line-height: 1.6;
+                                margin: 40px;
+                                color: #333;
+                            }}
+                            h1 {{ 
+                                color: #4CAF50; 
+                                text-align: center;
+                                border-bottom: 2px solid #4CAF50;
+                                padding-bottom: 10px;
+                            }}
+                            h2 {{ 
+                                color: #45a049;
+                                margin-top: 30px;
+                            }}
+                            .section {{ 
+                                margin: 20px 0;
+                                padding: 15px;
+                                background: #f9f9f9;
+                                border-radius: 5px;
+                            }}
+                            .info-box {{ 
+                                background: #f5f5f5; 
+                                padding: 20px; 
+                                border-radius: 5px; 
+                                margin: 20px 0;
+                                border-left: 4px solid #4CAF50;
+                            }}
+                            .info-box h3 {
+                                margin-top: 0;
+                                color: #4CAF50;
+                            }}
+                            .info-box p {
+                                margin: 5px 0;
+                            }}
+                            ul {{ 
+                                margin-left: 20px;
+                            }}
+                            li {{ 
+                                margin: 5px 0;
+                            }}
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Your Personalized Learning Path</h1>
+                        
+                        <div class="info-box">
+                            <h3>Learning Context</h3>
+                            <p><strong>Skill Level:</strong> {st.session_state.learning_context['skill_level']}</p>
+                            <p><strong>Subject Focus:</strong> {', '.join(st.session_state.learning_context['subject_focus'])}</p>
+                            <p><strong>Learning Goals:</strong> {st.session_state.learning_context['learning_goals']}</p>
+                            <p><strong>Learning Style:</strong> {learning_style}</p>
+                            <p><strong>Learning Pace:</strong> {pace}</p>
+                            <p><strong>Weekly Commitment:</strong> {weekly_hours} hours</p>
+                        </div>
+
+                        <div class="section">
+                            {st.session_state.generated_path.replace('\n', '<br>')}
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    
+                    # Save HTML content to a temporary file
+                    with open("temp_learning_path.html", "w", encoding="utf-8") as f:
+                        f.write(html_content)
+                    
+                    # Convert HTML to PDF using pdfkit
+                    config = pdfkit.configuration(wkhtmltopdf='C:\\Program Files\\wkhtmltopdf\\bin\\wkhtmltopdf.exe' if os.name == 'nt' else '/usr/local/bin/wkhtmltopdf')
+                    pdf = pdfkit.from_file("temp_learning_path.html", False, configuration=config)
+                    
+                    # Clean up temporary file
+                    os.remove("temp_learning_path.html")
+                    
+                    # Create download button
+                    st.download_button(
+                        label="Download PDF",
+                        data=pdf,
+                        file_name="learning_path.pdf",
+                        mime="application/pdf"
+                    )
+                    
+                except Exception as e:
+                    st.error(f"Error generating PDF: {str(e)}")
+                    st.info("""
+                        To generate PDFs, please:
+                        1. Install wkhtmltopdf:
+                           - Windows: Download from https://wkhtmltopdf.org/downloads.html
+                           - Linux: `sudo apt-get install wkhtmltopdf`
+                           - Mac: `brew install wkhtmltopdf`
+                        2. Install pdfkit: `pip install pdfkit`
+                        3. Make sure wkhtmltopdf is in your system PATH
+                    """)
+
+def setup_drawing_canvas():
+    st.sidebar.header("🖍️ Drawing Canvas")
+    
+    with st.sidebar:
+        st.write("Choose how to create your image:")
+        
+        # Simple toggle switch for draw/upload
+        input_method = st.radio("Input Method", ["Draw", "Upload"], horizontal=True)
+        
+        if input_method == "Draw":
             canvas_result = st_canvas(
                 fill_color="rgba(255, 255, 255, 0)",
                 stroke_width=2,
@@ -388,59 +874,193 @@ class ChatApp:
                 drawing_mode="freedraw",
                 key="canvas"
             )
-            if st.button("Interpret Drawing"):
-                if canvas_result.image_data is not None:
-                    image = Image.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA')
-                    img_byte_arr = io.BytesIO()
-                    image.save(img_byte_arr, format='PNG')
-                    img_byte_arr = img_byte_arr.getvalue()
+            image_data = canvas_result.image_data if canvas_result.image_data is not None else None
+        else:
+            uploaded_image = st.file_uploader("Choose an image...", type=['png', 'jpg', 'jpeg'], key="image_uploader")
+            if uploaded_image is not None:
+                image = Image.open(uploaded_image)
+                image = image.resize((300, 300))
+                if image.mode != 'RGBA':
+                    image = image.convert('RGBA')
+                image_data = np.array(image)
+            else:
+                image_data = None
+        
+        # Add text input for custom questions
+        custom_question = st.text_input("Ask a question about your image:", 
+                                      placeholder="e.g., What does this image represent?",
+                                      key="drawing_question")
+        
+        if st.button("Analyze Image", key="analyze_image"):
+            if image_data is not None:
+                # Convert image to bytes
+                img_byte_arr = io.BytesIO()
+                image = Image.fromarray(image_data.astype('uint8'), 'RGBA')
+                image.save(img_byte_arr, format='PNG')
+                img_byte_arr = img_byte_arr.getvalue()
+                encoded_image = base64.b64encode(img_byte_arr).decode('utf-8')
 
-                    encoded_image = base64.b64encode(img_byte_arr).decode('utf-8')
+                # Use the custom question if provided, otherwise use default
+                question = custom_question if custom_question else "What does this image represent?"
 
-                    llava_response = ollama.chat(
-                        model="llava",
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": "What does this image represent?",
-                                "images": [encoded_image]
-                            }
-                        ]
-                    )
-                    st.write("LLaVA Response: ", llava_response['message']['content'])
-            if st.button("Save Drawing"):
-                if canvas_result.image_data is not None:
-                    image = Image.fromarray(canvas_result.image_data)
-                    image.save("drawing.png")
-                    st.success("Drawing saved as drawing.png!")
-                else:
-                    st.warning("No drawing to save!")
-
-    def toggle_pdf_sidebar(self):
-        st.session_state['pdf_sidebar_open'] = not st.session_state.get('pdf_sidebar_open', False)
-        st.rerun()
-
-    def setup_pdf_sidebar(self):
-        with st.sidebar:
-            st.header("PDF Extractor")
-            uploaded_file = st.file_uploader("Upload your PDF", type=['pdf'])
-            
-            if uploaded_file is not None:
-                try:
-                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
-                    text = ""
-                    for page in pdf_reader.pages:
-                        text += page.extract_text()
-                    
-                    st.session_state.pdf_content = text
-                    st.success("PDF uploaded successfully! You can now ask questions about its content.")
-                    
-                    with st.expander("View PDF Content"):
-                        st.text(text[:1000] + "..." if len(text) > 1000 else text)
+                # Use Groq Vision model with correct message format
+                completion = client.chat.completions.create(
+                    model="llama-3.2-90b-vision-preview",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": question
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/png;base64,{encoded_image}"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    temperature=1,
+                    max_completion_tokens=1024,
+                    top_p=1,
+                    stream=False,
+                    stop=None,
+                )
                 
-                except Exception as e:
-                    st.error(f"Error processing PDF: {str(e)}")
+                # Add user message to chat history
+                current_time = datetime.now().strftime("%H:%M")
+                st.session_state.messages.append({
+                    'role': 'user',
+                    'content': f"{question} [Image uploaded]",
+                    'timestamp': current_time
+                })
+                
+                # Add AI response to chat history
+                st.session_state.messages.append({
+                    'role': 'assistant',
+                    'content': completion.choices[0].message.content,
+                    'timestamp': datetime.now().strftime("%H:%M")
+                })
+                
+                st.success("Analysis complete! Check the chat for results.")
+                st.rerun()
+            else:
+                st.warning("Please either draw something or upload an image first!")
 
-if __name__ == "__main__":
-    persona = SOFIA_TUTOR_PERSONA  # Define your persona
-    app = ChatApp(persona)
+# Add custom CSS
+add_custom_css()
+
+# Render the title
+st.markdown("""
+    <div class="main-title">
+        <h1>LearnBuddy⚡</h1>
+        <h3>Your AI Tutor</h3>
+    </div>
+""", unsafe_allow_html=True)
+
+# Show particles animation if enabled
+if st.session_state.show_animation:
+    components.html(particles_js, height=150)
+
+# Render the chat history in a scrollable container
+chat_container = st.container()
+with chat_container:
+    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+    for chat in st.session_state.messages:
+        with st.chat_message(
+            name=chat['role'].lower(),
+            avatar=icons[chat['role']]
+        ):
+            st.write(f"{chat['message'] if 'message' in chat else chat['content']}")
+            st.markdown(f'<div class="message-timestamp">Sent at {chat["timestamp"]}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# Sidebar with options
+with st.sidebar:
+    st.title("Options")
+    
+    with st.expander("Tools ⚙️", expanded=False):
+        if st.button("🎤 Voice Input", help="Use voice input to ask questions", key="voice_btn"):
+            st.toast("Voice input is not implemented in this demo")
+            
+        if st.button("🎥 Live Class", help="Start an interactive live class session", key="live_btn"):
+            st.toast("Live class is not implemented in this demo")
+            
+        if st.button("🖍️ Drawing", help="Open drawing canvas for visual explanations", key="draw_btn"):
+            toggle_canvas()
+            st.rerun()
+            
+        if st.button("📄 PDF Upload", help="Upload and analyze PDF documents", key="pdf_btn"):
+            toggle_pdf_sidebar()
+            st.rerun()
+            
+        if st.button("📚 Learning Path", help="Create your personalized learning path", key="path_btn"):
+            toggle_learning_path()
+            st.rerun()
+            
+        if st.button("📋 Tasks", help="Manage your learning tasks", key="task_btn"):
+            toggle_task_planner()
+            st.rerun()
+    
+    with st.expander("Settings 🛠️", expanded=False):
+        if st.button("Clear Chat History"):
+            st.session_state.messages = [{
+                "role": "assistant", 
+                "content": "Chat history cleared. How can I help you?",
+                "timestamp": datetime.now().strftime("%H:%M")
+            }]
+            st.session_state.show_animation = True
+            st.rerun()
+        
+        animation_toggle = st.toggle("Show Particles Animation", value=st.session_state.show_animation)
+        if animation_toggle != st.session_state.show_animation:
+            st.session_state.show_animation = animation_toggle
+            st.rerun()
+    
+    # Display task planner or PDF sidebar based on state
+    if st.session_state.task_planner_open:
+        setup_task_planner()
+    
+    if st.session_state.pdf_sidebar_open:
+        setup_pdf_sidebar()
+        
+    if st.session_state.learning_path_open:
+        setup_learning_path()
+        
+    if st.session_state.canvas_open:
+        setup_drawing_canvas()
+
+# Fixed chat input at the bottom
+st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
+prompt = st.chat_input("Ask me anything...", key="chat_input")
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Handle message sending
+if prompt:
+    st.session_state.show_animation = False
+    
+    # Add user message to chat history
+    current_time = datetime.now().strftime("%H:%M")
+    st.session_state.messages.append({
+        'role': 'user',
+        'content': prompt,
+        'timestamp': current_time
+    })
+    
+    # Get AI response - in real implementation, this would call an LLM
+    with st.spinner("Thinking..."):
+        # Simulate a slight delay to mimic LLM processing
+        time.sleep(1)
+        assistant_response = get_mock_response(prompt)
+    
+    # Add assistant response to chat history
+    st.session_state.messages.append({
+        'role': 'assistant',
+        'content': assistant_response,
+        'timestamp': datetime.now().strftime("%H:%M")
+    })
+    
+    st.rerun()
