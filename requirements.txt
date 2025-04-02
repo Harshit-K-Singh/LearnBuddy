@@ -1,10 +1,8 @@
 streamlit
-Pillow
-gTTS
-pyttsx3
-opencv-python
-SpeechRecognition
 PyPDF2
-python-dotenv
-streamlit-drawable-canvas
+Pillow
+numpy
 groq
+pdfkit
+streamlit-drawable-canvas
+python-dotenv 
