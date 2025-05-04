@@ -913,7 +913,7 @@ def setup_drawing_canvas():
 
                 # Use Groq Vision model with correct message format
                 completion = client.chat.completions.create(
-                    model="llama-3.2-90b-vision-preview",
+                    model="meta-llama/llama-4-maverick-17b-128e-instruct",
                     messages=[
                         {
                             "role": "user",
