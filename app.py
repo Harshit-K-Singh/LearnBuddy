@@ -213,19 +213,17 @@ if "pdf_content" not in st.session_state:
     st.session_state.pdf_content = None
 
 # Mock LLM response
-client = Groq()
-completion = client.chat.completions.create(
-    model="llama-3.1-8b-instant",
-    messages=[],
-    temperature=1,
-    max_completion_tokens=1024,
-    top_p=1,
-    stream=True,
-    stop=None,
-)
+def get_mock_response(prompt):
+    """Simulate an AI response to demonstrate the UI"""
+    # Using a simple template system for demo purposes
+    responses = [
+        f"I understand you're asking about '{prompt}'. As your AI tutor, I'd suggest breaking this down step by step.",
+        f"That's a great question about '{prompt}'! Let me explain this concept in a way that's easy to understand.",
+        f"When it comes to '{prompt}', there are a few key principles to keep in mind. First, let's clarify the fundamentals.",
+        f"I'd be happy to help you learn about '{prompt}'. This is actually a fascinating topic that connects to many other areas."
+    ]
+    return random.choice(responses) + "\n\nIs there a specific aspect of this topic you'd like to explore further?"
 
-for chunk in completion:
-    print(chunk.choices[0].delta.content or "", end="")
 # Function to add custom CSS
 def add_custom_css():
     st.markdown("""
